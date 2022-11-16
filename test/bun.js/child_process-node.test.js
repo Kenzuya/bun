@@ -14,6 +14,8 @@ const debug = process.env.DEBUG ? console.log : () => {};
 
 const platformTmpDir = require("fs").realpathSync(tmpdir());
 
+const TYPE_ERR_NAME = "TypeError";
+
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -57,7 +59,7 @@ describe("ChildProcess.spawn()", () => {
         },
         {
           code: "ERR_INVALID_ARG_TYPE",
-          name: "TypeError",
+          name: TYPE_ERR_NAME,
           // message:
           //   'The "options" argument must be of type object.' +
           //   `${common.invalidArgTypeHelper(options)}`,
@@ -76,7 +78,7 @@ describe("ChildProcess.spawn()", () => {
         },
         {
           code: "ERR_INVALID_ARG_TYPE",
-          name: "TypeError",
+          name: TYPE_ERR_NAME,
           // message:
           //   'The "options.file" property must be of type string.' +
           //   `${common.invalidArgTypeHelper(file)}`,
@@ -99,7 +101,7 @@ describe("ChildProcess.spawn()", () => {
         },
         {
           code: "ERR_INVALID_ARG_TYPE",
-          name: "TypeError",
+          name: TYPE_ERR_NAME,
           // message:
           //   'The "options.envPairs" property must be an instance of Array.' +
           //   common.invalidArgTypeHelper(envPairs),
@@ -119,7 +121,7 @@ describe("ChildProcess.spawn()", () => {
         },
         {
           code: "ERR_INVALID_ARG_TYPE",
-          name: "TypeError",
+          name: TYPE_ERR_NAME,
           // message:
           //   'The "options.args" property must be an instance of Array.' +
           //   common.invalidArgTypeHelper(args),
@@ -158,7 +160,7 @@ describe("ChildProcess.spawn", () => {
       () => {
         child.kill("foo");
       },
-      { code: "ERR_UNKNOWN_SIGNAL", name: "TypeError" },
+      { code: "ERR_UNKNOWN_SIGNAL", name: TYPE_ERR_NAME },
     );
   });
 
@@ -390,18 +392,41 @@ describe("child_process default options", () => {
 
 describe("child_process double pipe", () => {
   it("should allow two pipes to be used at once", (done) => {
-    const { mustCallAtLeast, mustCall } = createCallCheckCtx(done);
+    // const { mustCallAtLeast, mustCall } = createCallCheckCtx(done);
+    const mustCallAtLeast = (fn) => fn;
+    const mustCall = (fn) => fn;
     let grep, sed, echo;
-    grep = spawn("grep", ["o"]);
-    sed = spawn("sed", ["s/o/O/"]);
-    echo = spawn("echo", ["hello\nnode\nand\nworld\n"]);
+    grep = spawn("grep", ["o"], { stdio: ["pipe", "pipe", "pipe"] });
+    // sed = spawn("sed", ["s/o/O/"]);
+    // echo = spawn("echo", ["hello\nnode\nand\nworld\n"]);
 
-    // pipe echo | grep
+    // pipe grep | sed
+    grep.stdout.on(
+      "data",
+      mustCallAtLeast((data) => {
+        debug(`grep stdout ${data.length}`);
+        if (!sed.stdin.write(data)) {
+          grep.stdout.pause();
+        }
+      }),
+    );
+    grep.stdin.write(new TextEncoder().encode("hello"));
+
+    // print sed's output
+    sed.stdout.on(
+      "data",
+      mustCallAtLeast((data) => {
+        result += data.toString("utf8");
+        debug(data);
+      }),
+    );
+
     echo.stdout.on(
       "data",
       mustCallAtLeast((data) => {
         debug(`grep stdin write ${data.length}`);
         if (!grep.stdin.write(data)) {
+          debug("echo stdout pause");
           echo.stdout.pause();
         }
       }),
@@ -409,11 +434,12 @@ describe("child_process double pipe", () => {
 
     // TODO(Derrick): We don't implement the full API for this yet,
     // So stdin has no 'drain' event.
-    // // TODO(@jasnell): This does not appear to ever be
-    // // emitted. It's not clear if it is necessary.
-    // grep.stdin.on("drain", (data) => {
-    //   echo.stdout.resume();
-    // });
+    // TODO(@jasnell): This does not appear to ever be
+    // emitted. It's not clear if it is necessary.
+    grep.stdin.on("drain", () => {
+      debug("echo stdout resume");
+      echo.stdout.resume();
+    });
 
     // Propagate end from echo to grep
     echo.stdout.on(
@@ -445,27 +471,16 @@ describe("child_process double pipe", () => {
       }),
     );
 
-    // pipe grep | sed
-    grep.stdout.on(
-      "data",
-      mustCallAtLeast((data) => {
-        debug(`grep stdout ${data.length}`);
-        if (!sed.stdin.write(data)) {
-          grep.stdout.pause();
-        }
-      }),
-    );
-
-    // // TODO(@jasnell): This does not appear to ever be
-    // // emitted. It's not clear if it is necessary.
-    sed.stdin.on("drain", (data) => {
+    // TODO(@jasnell): This does not appear to ever be
+    // emitted. It's not clear if it is necessary.
+    sed.stdin.on("drain", () => {
       grep.stdout.resume();
     });
 
     // Propagate end from grep to sed
     grep.stdout.on(
       "end",
-      mustCall((code) => {
+      mustCall(() => {
         debug("grep stdout end");
         sed.stdin.end();
       }),
@@ -473,20 +488,12 @@ describe("child_process double pipe", () => {
 
     let result = "";
 
-    // print sed's output
-    sed.stdout.on(
-      "data",
-      mustCallAtLeast((data) => {
-        result += data.toString("utf8");
-        debug(data);
-      }),
-    );
-
     sed.stdout.on(
       "end",
       mustCall(() => {
         debug("result: " + result);
         strictEqual(result, `hellO\nnOde\nwOrld\n`);
+        done();
       }),
     );
   });

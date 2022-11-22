@@ -1,4 +1,4 @@
-import { beforeAll, describe, it } from "bun:test";
+import { beforeAll, describe, it, expect } from "bun:test";
 import { ChildProcess, spawn, exec } from "node:child_process";
 import {
   strictEqual,
@@ -15,6 +15,8 @@ const debug = process.env.DEBUG ? console.log : () => {};
 const platformTmpDir = require("fs").realpathSync(tmpdir());
 
 const TYPE_ERR_NAME = "TypeError";
+
+console.log(process.cwd());
 
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -139,7 +141,7 @@ describe("ChildProcess.spawn", () => {
       // file: process.execPath,
       args: ["node", "--interactive"],
       cwd: process.cwd(),
-      stdio: ["ignore", "ignore", "ignore", "ipc"],
+      stdio: ["ignore", "ignore", "ignore"],
     });
     return child;
   }
@@ -164,9 +166,10 @@ describe("ChildProcess.spawn", () => {
     );
   });
 
-  it("should die when killed", () => {
+  it("should die when killed", async () => {
     const child = getChild();
     strictEqual(child.kill(), true);
+    strictEqual(await child._getIsReallyKilled(), true);
   });
 });
 
@@ -395,8 +398,8 @@ describe("child_process double pipe", () => {
     const mustCall = (fn) => fn;
     let grep, sed, echo;
     grep = spawn("grep", ["o"], { stdio: ["pipe", "pipe", "pipe"] });
-    // sed = spawn("sed", ["s/o/O/"]);
-    // echo = spawn("echo", ["hello\nnode\nand\nworld\n"]);
+    sed = spawn("sed", ["s/o/O/"]);
+    echo = spawn("echo", ["hello\nnode\nand\nworld\n"]);
 
     // pipe grep | sed
     grep.stdout.on(
@@ -408,7 +411,6 @@ describe("child_process double pipe", () => {
         }
       }),
     );
-    grep.stdin.write(new TextEncoder().encode("hello"));
 
     // print sed's output
     sed.stdout.on(

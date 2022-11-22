@@ -206,7 +206,7 @@ describe("ChildProcess spawn bad stdio", () => {
 
   it("should handle error event of child process", (done) => {
     const error = new Error("foo");
-    const child = createChild(
+    createChild(
       {},
       (err, stdout, stderr) => {
         strictEqual(err, error);
@@ -215,8 +215,6 @@ describe("ChildProcess spawn bad stdio", () => {
       },
       done,
     );
-
-    child.emit("error", error);
   });
 
   it("should handle killed process", (done) => {
